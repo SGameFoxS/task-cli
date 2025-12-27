@@ -1,0 +1,15 @@
+[project]
+name = "click-cli"
+version = "0.1.0"
+description = "Task tracker is a project used to track and manage your tasks"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.3.1",
+]
+
+[tool.uv]
+package = true
+
+[project.scripts]
+task-cli = "app.cli:cli"
