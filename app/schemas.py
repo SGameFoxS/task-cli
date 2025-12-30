@@ -1,8 +1,8 @@
 from typing import TypedDict, Literal, Protocol
 
-TaskStatus = Literal["todo", "in_progress", "done"]
+__all__ = ("Task", "TaskStatus", "TypedDictType")
 
-__all__ = ["Task", "TaskStatus", "TypedDictType"]
+TaskStatus = Literal["todo", "in_progress", "done"]
 
 
 class Task(TypedDict):
