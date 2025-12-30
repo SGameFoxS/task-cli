@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from schemas import Task, TypedDictType
-from typing import Final, Any, Literal, get_origin, get_args
+from typing import Final, Any, Literal, get_origin, get_args, cast
 
 REPO_DIR_NAME: Final[str] = "data"
 REPO_DIR_PATH: Final[Path] = Path(__file__).resolve().parents[1] / REPO_DIR_NAME
@@ -31,14 +31,13 @@ def _check_value_type(value: Any, expected_type: Any) -> bool:
     Return True if `value` matches `expected_type`.
 
     Supported checks:
-      - Literal[...]    (e.g. Literal["todo", "done"])
-      - builtin/classes (e.g. int, str)
+        - Literal[...] (e.g. Literal["todo", "done"])
+        - plain classes / builtins (e.g. int, str)
 
-    Note:
-      This is a minimal runtime type checker for repository validation.
-      It does not support containers (list[T], dict[K, V]), Union/Optional, etc.
+    Notes:
+        This is a minimal runtime checker used for repository validation.
+        It does not support containers (list[T], dict[K, V]), Union/Optional, etc.
     """
-
     origin = get_origin(expected_type)
 
     if origin is Literal:
@@ -52,13 +51,12 @@ def _check_value_type(value: Any, expected_type: Any) -> bool:
 
 def _type_repr(expected_type: Any) -> str:
     """
-    Human-readable representation of an expected type for error messages.
+    Return a human-readable representation of `expected_type` for error messages.
 
     Examples:
-      - Literal["a", "b"] -> "'a' or 'b'"
-      - str -> "str"
+        - Literal["a", "b"] -> "'a' or 'b'"
+        - str -> "str"
     """
-
     origin = get_origin(expected_type)
 
     if origin is Literal:
@@ -71,28 +69,17 @@ def _type_repr(expected_type: Any) -> str:
     return str(expected_type)
 
 
-def _validate_typed_dict(obj: Any, schema: type[TypedDictType]) -> dict[str, Any]:
+def _assert_typed_dict(obj: object, schema: type[TypedDictType]) -> None:
     """
-    Validate that `obj` conforms to a TypedDict-like schema.
+    Assert that `obj` conforms to a TypedDict-like schema at runtime.
 
-    The schema is provided as a TypedDict class (e.g. `Task`) and is inspected via:
-      - schema.__annotations__     (field names and expected types)
-      - schema.__required_keys__   (required fields)
-      - schema.__optional_keys__   (optional fields)
-
-    Validation performed:
-      - `obj` must be a dict
-      - all required keys must be present
-      - no unexpected keys are allowed
-      - values of present keys must match expected types (see `_check_value_type`)
-
-    Returns:
-      The same dict object (useful for chaining), typed as dict[str, Any].
+    The schema is a TypedDict class (e.g. `Task`). Validation uses:
+        - schema.__annotations__   for field names and expected types
+        - schema.__required_keys__ for required fields
 
     Raises:
-      ValueError: if the object does not match the schema.
+        ValueError: If `obj` does not match the schema.
     """
-
     if not isinstance(obj, dict):
         raise ValueError(VALIDATION_EXPECTED_DICT_ERROR.format(got=type(obj).__name__))
 
@@ -104,7 +91,7 @@ def _validate_typed_dict(obj: Any, schema: type[TypedDictType]) -> dict[str, Any
         raise ValueError(VALIDATION_MISSING_KEYS_ERROR.format(keys=missing))
 
     # extra keys
-    extra = [k for k in obj if k not in ann and k not in schema.__optional_keys__]
+    extra = [k for k in obj if k not in ann]
     if extra:
         raise ValueError(VALIDATION_UNEXPECTED_KEYS_ERROR.format(keys=extra))
 
@@ -123,35 +110,30 @@ def _validate_typed_dict(obj: Any, schema: type[TypedDictType]) -> dict[str, Any
                 )
             )
 
-    return obj
 
-
-def _validate_tasks(data: Any, *, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
+def _assert_tasks_valid(data: object, *, repo_path: Path = REPO_FILE_PATH) -> None:
     """
-    Validate repository payload decoded from JSON.
+    Validate a decoded repository payload.
 
-    The repository format must be a list of Task objects.
+    The repository payload must be a JSON array (Python list) of Task objects.
+
+    This function does not return the validated tasks. It either:
+        - succeeds silently, or
+        - raises an exception with details (including an item index and file path).
 
     Args:
-        data: Decoded JSON value (typically from `json.load`).
-        repo_path: Repository file path, included in error messages to make
-            them clickable in some editors (e.g. VS Code).
-
-    Returns:
-        A list of validated tasks.
+        data: Decoded JSON value (typically returned by `json.load`).
+        repo_path: Path included in error messages (useful for editor click-through).
 
     Raises:
-        ValueError: if `data` is not a list, or any item is not a valid Task.
+        ValueError: If `data` is not a list or any item is not a valid Task.
     """
-
     if not isinstance(data, list):
         raise ValueError(REPO_FORMAT_INVALID_ERROR)
 
-    res: list[Task] = []
-
     for i, item in enumerate(data):
         try:
-            _validate_typed_dict(item, Task)
+            _assert_typed_dict(item, Task)
         except ValueError as e:
             raise ValueError(
                 TASK_INVALID_AT_INDEX_ERROR.format(
@@ -161,9 +143,27 @@ def _validate_tasks(data: Any, *, repo_path: Path = REPO_FILE_PATH) -> list[Task
                 )
             ) from e
 
-        res.append(item)
 
-    return res
+def _as_tasks(data: object, *, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
+    """
+    Validate and cast a decoded JSON value to `list[Task]`.
+
+    This is a small convenience wrapper around `_assert_tasks_valid`.
+    If validation succeeds, the returned value is the original list, typed as
+    `list[Task]` for static type checkers.
+
+    Args:
+        data: Decoded JSON value (typically returned by `json.load`).
+        repo_path: Repository file path used in error messages.
+
+    Returns:
+        The validated tasks list, typed as `list[Task]`.
+
+    Raises:
+        ValueError: If the repository payload is invalid.
+    """
+    _assert_tasks_valid(data, repo_path=repo_path)
+    return cast(list[Task], data)
 
 
 def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
@@ -171,12 +171,12 @@ def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
     Load tasks from the JSON repository file.
 
     Expected file contents:
-      - a JSON array (list) of task objects
+        A JSON array (list) of task objects.
 
     Behavior:
-      - if the file does not exist: returns an empty list
-      - if the JSON is invalid: raises ValueError(REPO_CORRUPTED_ERROR)
-      - if the JSON is valid but has the wrong shape: raises ValueError
+        - If the file does not exist: return an empty list.
+        - If the file contains invalid JSON: raise ValueError (corrupted file).
+        - If the JSON is valid but has an invalid shape: raise ValueError.
 
     Args:
         repo_path: Path to the repository JSON file.
@@ -185,20 +185,18 @@ def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
         A list of validated tasks.
 
     Raises:
-        ValueError: If the repository file contains invalid JSON (corrupted),
-            or if the decoded JSON has an invalid format.
+        ValueError: If the JSON is corrupted or the decoded payload is invalid.
         OSError: If the file cannot be read due to filesystem-related errors.
     """
-
     try:
         with repo_path.open(encoding="utf-8") as repo_file:
-            data = json.load(repo_file)
+            data: object = json.load(repo_file)
     except FileNotFoundError:
         data = []
     except json.JSONDecodeError as e:
         raise ValueError(REPO_CORRUPTED_ERROR.format(repo_path=repo_path)) from e
 
-    return _validate_tasks(data)
+    return _as_tasks(data)
 
 
 def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
@@ -206,22 +204,21 @@ def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
     Append a task to the JSON repository file.
 
     Notes:
-      - `task` is validated against the Task schema before writing.
-      - Existing repository contents are loaded and validated as well.
-      - Parent directories are created automatically.
+        - `task` is validated against the Task schema before writing.
+        - Existing repository contents are loaded and validated as well.
+        - Parent directories are created automatically.
 
     Args:
         task: Task object to append to the repository (must be JSON-serializable).
         repo_path: Path to the repository JSON file.
 
     Raises:
-        ValueError: If `task` is invalid, or the repository file is corrupted,
+        ValueError: If `task` is invalid, the repository file is corrupted,
             or the repository contents have an invalid format.
         OSError: If the file or directories cannot be created/read/written.
-        TypeError: If the resulting data cannot be JSON-serialized.
+        TypeError: If the resulting payload cannot be JSON-serialized.
     """
-
-    _validate_typed_dict(task, Task)
+    _assert_typed_dict(task, Task)
 
     repo_path.parent.mkdir(parents=True, exist_ok=True)
     data = load_tasks(repo_path=repo_path)
@@ -229,15 +226,3 @@ def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
     data.append(task)
     with repo_path.open("w", encoding="utf-8") as repo_file:
         json.dump(data, repo_file, ensure_ascii=False, indent=1)
-
-
-if __name__ == "__main__":
-    new_task: Task = {
-        "id": 1,
-        "description": "Example Task",
-        "status": "todo",
-        "created_at": "2024-06-01T12:00:00Z",
-        "updated_at": "2024-06-01T12:00:00Z",
-    }
-
-    save_task(new_task)
