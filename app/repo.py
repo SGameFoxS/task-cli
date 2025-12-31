@@ -28,6 +28,8 @@ ITEM_INVALID_AT_INDEX_ERROR: Final[str] = (
     "Invalid item at index {index}. {detail} ({repo_path})"
 )
 
+TASK_NOT_FOUND_ERROR: Final[str] = "Task with id {task_id!r} not found"
+
 T = TypeVar("T", bound=TypedDictType)
 
 
@@ -209,6 +211,29 @@ def _load(*, schema: type[T], repo_path: Path) -> list[T]:
     return _as_list(data, schema=schema, repo_path=repo_path)
 
 
+def _write_all(items: list[T], *, repo_path: Path, indent: int | None = 1) -> None:
+    """
+    Write the full repository payload to disk.
+
+    Notes:
+        - Parent directories are created automatically.
+        - The repository file is overwritten.
+
+    Args:
+        items: List of JSON-serializable items to write.
+        repo_path: Path to the repository JSON file.
+        indent: JSON indentation level. Use `None` for compact output.
+
+    Raises:
+        OSError: If the file cannot be created/opened/written.
+        TypeError: If `items` cannot be JSON-serialized.
+    """
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with repo_path.open("w", encoding="utf-8") as repo_file:
+        json.dump(items, repo_file, ensure_ascii=False, indent=indent)
+
+
 def _save(item: T, *, schema: type[T], repo_path: Path) -> None:
     """
     Append an item to the JSON repository file.
@@ -216,7 +241,6 @@ def _save(item: T, *, schema: type[T], repo_path: Path) -> None:
     Notes:
         - `item` is validated against `schema` before writing.
         - Existing repository contents are loaded and validated as well.
-        - Parent directories are created automatically.
 
     Args:
         item: Item to append (must be JSON-serializable).
@@ -231,12 +255,11 @@ def _save(item: T, *, schema: type[T], repo_path: Path) -> None:
     """
     _assert_typed_dict(item, schema=schema)
 
-    repo_path.parent.mkdir(parents=True, exist_ok=True)
     data = _load(schema=schema, repo_path=repo_path)
 
     data.append(item)
-    with repo_path.open("w", encoding="utf-8") as repo_file:
-        json.dump(data, repo_file, ensure_ascii=False, indent=1)
+
+    _write_all(data, repo_path=repo_path)
 
 
 def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
@@ -286,7 +309,12 @@ def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
     _save(task, schema=Task, repo_path=repo_path)
 
 
-def create_task(description: str, status: TaskStatusEnum = TaskStatusEnum.TODO) -> None:
+def create_task(
+    description: str,
+    status: TaskStatusEnum = TaskStatusEnum.TODO,
+    *,
+    repo_path: Path = REPO_FILE_PATH,
+) -> None:
     """
     Create a new task and persist it in the JSON repository.
 
@@ -304,6 +332,7 @@ def create_task(description: str, status: TaskStatusEnum = TaskStatusEnum.TODO) 
     Args:
         description: Human-readable task description.
         status: Initial task status as an enum value. Defaults to `TODO`.
+        repo_path: Path to the repository JSON file.
 
     Raises:
         ValueError: If the repository file is corrupted or contains invalid data,
@@ -312,7 +341,7 @@ def create_task(description: str, status: TaskStatusEnum = TaskStatusEnum.TODO) 
             filesystem-related errors.
         TypeError: If the resulting payload cannot be JSON-serialized.
     """
-    data = load_tasks()
+    data = load_tasks(repo_path=repo_path)
 
     next_id = max((task["id"] for task in data), default=0) + 1
     now = datetime.now(timezone.utc).isoformat()
@@ -326,3 +355,28 @@ def create_task(description: str, status: TaskStatusEnum = TaskStatusEnum.TODO) 
     }
 
     save_task(task)
+
+
+def delete_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    """
+    Delete a task from the repository by its integer id.
+
+    Args:
+        task_id: Task id to delete.
+        repo_path: Path to the repository JSON file.
+
+    Raises:
+        ValueError: If no task with the given id exists, or if the repository
+            file is corrupted/invalid.
+        OSError: If the file cannot be read or written due to filesystem errors.
+        TypeError: If the resulting payload cannot be JSON-serialized.
+    """
+    data = load_tasks(repo_path=repo_path)
+
+    idx = next((i for i, t in enumerate(data) if t["id"] == task_id), None)
+    if idx is None:
+        raise ValueError(TASK_NOT_FOUND_ERROR.format(task_id=task_id))
+
+    del data[idx]
+
+    _write_all(data, repo_path=repo_path)
