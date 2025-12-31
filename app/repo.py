@@ -419,3 +419,17 @@ def update_task(
     data[idx]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     _write_all(data, repo_path=repo_path)
+
+
+def mark_task_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    data = load_tasks(repo_path=repo_path)
+
+    idx = _find_item_idx(data, task_id)
+    if idx is None:
+        raise ValueError(TASK_NOT_FOUND_ERROR.format(task_id=task_id))
+
+    data[idx]["status"] = TaskStatusEnum.IN_PROGRESS.value
+    data[idx]["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    _write_all(data, repo_path=repo_path)
+
