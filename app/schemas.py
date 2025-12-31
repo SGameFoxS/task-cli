@@ -22,6 +22,10 @@ class Task(TypedDict):
     updated_at: str
 
 
+class HasId(TypedDict):
+    id: int
+
+
 class TypedDictType(Protocol):
     __annotations__: dict[str, Any]
     __required_keys__: frozenset[str]

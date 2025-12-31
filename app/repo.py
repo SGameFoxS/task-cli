@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
-from schemas import Task, TypedDictType, TaskStatusEnum
+from schemas import Task, TypedDictType, TaskStatusEnum, HasId
 from typing import Final, Any, Literal, get_origin, get_args, cast, TypeVar
 from datetime import datetime, timezone
 
-__all__ = ("load_tasks", "save_task", "create_task")
+__all__ = ("load_tasks", "save_task", "create_task", "delete_task", "update_task")
 
 REPO_DIR_NAME: Final[str] = "data"
 REPO_DIR_PATH: Final[Path] = Path(__file__).resolve().parents[1] / REPO_DIR_NAME
@@ -28,9 +28,10 @@ ITEM_INVALID_AT_INDEX_ERROR: Final[str] = (
     "Invalid item at index {index}. {detail} ({repo_path})"
 )
 
-TASK_NOT_FOUND_ERROR: Final[str] = "Task with id {task_id!r} not found"
+TASK_NOT_FOUND_ERROR: Final[str] = "Task with id {task_id} not found"
 
 T = TypeVar("T", bound=TypedDictType)
+U = TypeVar("U", bound=HasId)
 
 
 def _check_value_type(value: Any, expected_type: Any) -> bool:
@@ -262,6 +263,11 @@ def _save(item: T, *, schema: type[T], repo_path: Path) -> None:
     _write_all(data, repo_path=repo_path)
 
 
+def _find_item_idx(items: list[U], item_id: int) -> int | None:
+    """Return the index of the first item whose 'id' equals `item_id`, or None if not found."""
+    return next((i for i, t in enumerate(items) if t["id"] == item_id), None)
+
+
 def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
     """
     Load tasks from the JSON repository file.
@@ -354,7 +360,7 @@ def create_task(
         "updated_at": now,
     }
 
-    save_task(task)
+    save_task(task, repo_path=repo_path)
 
 
 def delete_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
@@ -373,10 +379,43 @@ def delete_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     """
     data = load_tasks(repo_path=repo_path)
 
-    idx = next((i for i, t in enumerate(data) if t["id"] == task_id), None)
+    idx = _find_item_idx(data, task_id)
     if idx is None:
         raise ValueError(TASK_NOT_FOUND_ERROR.format(task_id=task_id))
 
     del data[idx]
+
+    _write_all(data, repo_path=repo_path)
+
+
+def update_task(
+    task_id: int, description: str, *, repo_path: Path = REPO_FILE_PATH
+) -> None:
+    """
+    Update an existing task by id.
+
+    The task is located by its integer `id`. If found, its `description` is
+    replaced with the provided value and `updated_at` is set to the current
+    UTC time (ISO 8601). The repository file is then rewritten.
+
+    Args:
+        task_id: Task id to update.
+        description: New task description.
+        repo_path: Path to the repository JSON file.
+
+    Raises:
+        ValueError: If no task with the given id exists, or if the repository
+            file is corrupted/invalid.
+        OSError: If the file cannot be read or written due to filesystem errors.
+        TypeError: If the resulting payload cannot be JSON-serialized.
+    """
+    data = load_tasks(repo_path=repo_path)
+
+    idx = _find_item_idx(data, task_id)
+    if idx is None:
+        raise ValueError(TASK_NOT_FOUND_ERROR.format(task_id=task_id))
+
+    data[idx]["description"] = description
+    data[idx]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     _write_all(data, repo_path=repo_path)
