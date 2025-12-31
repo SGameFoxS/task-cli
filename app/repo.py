@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from schemas import Task, TypedDictType, TaskStatusEnum
-from typing import Final, Any, Literal, get_origin, get_args, cast
+from typing import Final, Any, Literal, get_origin, get_args, cast, TypeVar
 from datetime import datetime, timezone
 
 __all__ = ("load_tasks", "save_task", "create_task")
@@ -14,19 +14,21 @@ REPO_FILE_PATH: Final[Path] = REPO_DIR_PATH / REPO_FILE_NAME
 
 REPO_CORRUPTED_ERROR: Final[str] = "Corrupted repository file ({repo_path})"
 REPO_FORMAT_INVALID_ERROR: Final[str] = (
-    "Repository format is invalid: expected a list of tasks"
+    "Repository format is invalid: expected a JSON array (list) of items"
 )
 
-VALIDATION_EXPECTED_DICT_ERROR: Final[str] = "Expected dict object, got {got}"
+VALIDATION_EXPECTED_DICT_ERROR: Final[str] = "Expected JSON object (dict), got {got}"
 VALIDATION_MISSING_KEYS_ERROR: Final[str] = "Missing keys: {keys}"
 VALIDATION_UNEXPECTED_KEYS_ERROR: Final[str] = "Unexpected keys: {keys}"
 VALIDATION_INVALID_TYPE_ERROR: Final[str] = (
     "Invalid type for {key!r}: expected {expected}, got {got!r}"
 )
 
-TASK_INVALID_AT_INDEX_ERROR: Final[str] = (
-    "Invalid task at index {index}. {detail} ({repo_path})"
+ITEM_INVALID_AT_INDEX_ERROR: Final[str] = (
+    "Invalid item at index {index}. {detail} ({repo_path})"
 )
+
+T = TypeVar("T", bound=TypedDictType)
 
 
 def _check_value_type(value: Any, expected_type: Any) -> bool:
@@ -72,16 +74,16 @@ def _type_repr(expected_type: Any) -> str:
     return str(expected_type)
 
 
-def _assert_typed_dict(obj: object, schema: type[TypedDictType]) -> None:
+def _assert_typed_dict(obj: object, schema: type[T]) -> None:
     """
-    Assert that `obj` conforms to a TypedDict-like schema at runtime.
+    Assert that `obj` conforms to the given TypedDict schema at runtime.
 
     The schema is a TypedDict class (e.g. `Task`). Validation uses:
         - schema.__annotations__   for field names and expected types
         - schema.__required_keys__ for required fields
 
     Raises:
-        ValueError: If `obj` does not match the schema.
+        ValueError: If `obj` is not a dict or does not match the schema.
     """
     if not isinstance(obj, dict):
         raise ValueError(VALIDATION_EXPECTED_DICT_ERROR.format(got=type(obj).__name__))
@@ -114,32 +116,35 @@ def _assert_typed_dict(obj: object, schema: type[TypedDictType]) -> None:
             )
 
 
-def _assert_tasks_valid(data: object, *, repo_path: Path = REPO_FILE_PATH) -> None:
+def _assert_list_valid(data: object, *, schema: type[T], repo_path: Path) -> None:
     """
     Validate a decoded repository payload.
 
-    The repository payload must be a JSON array (Python list) of Task objects.
+    Expected payload:
+        A JSON array (Python list) where each element is an object (dict)
+        matching `schema`.
 
-    This function does not return the validated tasks. It either:
+    This function does not return the validated list. It either:
         - succeeds silently, or
         - raises an exception with details (including an item index and file path).
 
     Args:
         data: Decoded JSON value (typically returned by `json.load`).
+        schema: TypedDict schema used to validate each list element.
         repo_path: Path included in error messages (useful for editor click-through).
 
     Raises:
-        ValueError: If `data` is not a list or any item is not a valid Task.
+        ValueError: If `data` is not a list or any element does not match `schema`.
     """
     if not isinstance(data, list):
         raise ValueError(REPO_FORMAT_INVALID_ERROR)
 
     for i, item in enumerate(data):
         try:
-            _assert_typed_dict(item, Task)
+            _assert_typed_dict(item, schema)
         except ValueError as e:
             raise ValueError(
-                TASK_INVALID_AT_INDEX_ERROR.format(
+                ITEM_INVALID_AT_INDEX_ERROR.format(
                     repo_path=repo_path,
                     index=i,
                     detail=e,
@@ -147,45 +152,47 @@ def _assert_tasks_valid(data: object, *, repo_path: Path = REPO_FILE_PATH) -> No
             ) from e
 
 
-def _as_tasks(data: object, *, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
+def _as_list(data: object, *, schema: type[T], repo_path: Path) -> list[T]:
     """
-    Validate and cast a decoded JSON value to `list[Task]`.
+    Validate and cast a decoded JSON value to `list[T]`.
 
-    This is a small convenience wrapper around `_assert_tasks_valid`.
+    This is a convenience wrapper around `_assert_list_valid`.
     If validation succeeds, the returned value is the original list, typed as
-    `list[Task]` for static type checkers.
+    `list[T]` for static type checkers.
 
     Args:
         data: Decoded JSON value (typically returned by `json.load`).
+        schema: TypedDict schema used to validate each list element.
         repo_path: Repository file path used in error messages.
 
     Returns:
-        The validated tasks list, typed as `list[Task]`.
+        The validated list (same object), typed as `list[T]`.
 
     Raises:
         ValueError: If the repository payload is invalid.
     """
-    _assert_tasks_valid(data, repo_path=repo_path)
-    return cast(list[Task], data)
+    _assert_list_valid(data, schema=schema, repo_path=repo_path)
+    return cast(list[T], data)
 
 
-def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
+def _load(*, schema: type[T], repo_path: Path) -> list[T]:
     """
-    Load tasks from the JSON repository file.
+    Load and validate a list of items from a JSON repository file.
 
     Expected file contents:
-        A JSON array (list) of task objects.
+        A JSON array (list) of objects matching `schema`.
 
     Behavior:
-        - If the file does not exist: return an empty list.
-        - If the file contains invalid JSON: raise ValueError (corrupted file).
-        - If the JSON is valid but has an invalid shape: raise ValueError.
+        - If the file does not exist: returns an empty list.
+        - If the file contains invalid JSON: raises ValueError (corrupted file).
+        - If the JSON is valid but has an invalid shape: raises ValueError.
 
     Args:
+        schema: TypedDict schema used to validate each list element.
         repo_path: Path to the repository JSON file.
 
     Returns:
-        A list of validated tasks.
+        A list of validated items, typed as `list[T]`.
 
     Raises:
         ValueError: If the JSON is corrupted or the decoded payload is invalid.
@@ -199,7 +206,62 @@ def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
     except json.JSONDecodeError as e:
         raise ValueError(REPO_CORRUPTED_ERROR.format(repo_path=repo_path)) from e
 
-    return _as_tasks(data)
+    return _as_list(data, schema=schema, repo_path=repo_path)
+
+
+def _save(item: T, *, schema: type[T], repo_path: Path) -> None:
+    """
+    Append an item to the JSON repository file.
+
+    Notes:
+        - `item` is validated against `schema` before writing.
+        - Existing repository contents are loaded and validated as well.
+        - Parent directories are created automatically.
+
+    Args:
+        item: Item to append (must be JSON-serializable).
+        schema: TypedDict schema used to validate `item` and repository contents.
+        repo_path: Path to the repository JSON file.
+
+    Raises:
+        ValueError: If `item` is invalid, the repository file is corrupted,
+            or the repository contents have an invalid format.
+        OSError: If the file or directories cannot be created/read/written.
+        TypeError: If the resulting payload cannot be JSON-serialized.
+    """
+    _assert_typed_dict(item, schema=schema)
+
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+    data = _load(schema=schema, repo_path=repo_path)
+
+    data.append(item)
+    with repo_path.open("w", encoding="utf-8") as repo_file:
+        json.dump(data, repo_file, ensure_ascii=False, indent=1)
+
+
+def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
+    """
+    Load tasks from the JSON repository file.
+
+    Expected file contents:
+        A JSON array (list) of task objects.
+
+    Behavior:
+        - If the file does not exist: returns an empty list.
+        - If the file contains invalid JSON: raises ValueError (corrupted file).
+        - If the JSON is valid but has an invalid shape: raises ValueError.
+
+    Args:
+        repo_path: Path to the repository JSON file.
+
+    Returns:
+        A list of validated tasks.
+
+    Raises:
+        ValueError: If the JSON is corrupted or the decoded payload is invalid.
+        OSError: If the file cannot be read due to filesystem-related errors.
+    """
+    return _load(schema=Task, repo_path=repo_path)
 
 
 def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
@@ -221,14 +283,7 @@ def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
         OSError: If the file or directories cannot be created/read/written.
         TypeError: If the resulting payload cannot be JSON-serialized.
     """
-    _assert_typed_dict(task, Task)
-
-    repo_path.parent.mkdir(parents=True, exist_ok=True)
-    data = load_tasks(repo_path=repo_path)
-
-    data.append(task)
-    with repo_path.open("w", encoding="utf-8") as repo_file:
-        json.dump(data, repo_file, ensure_ascii=False, indent=1)
+    _save(task, schema=Task, repo_path=repo_path)
 
 
 def create_task(description: str, status: TaskStatusEnum = TaskStatusEnum.TODO) -> None:
@@ -240,10 +295,9 @@ def create_task(description: str, status: TaskStatusEnum = TaskStatusEnum.TODO) 
     in UTC using ISO 8601 format.
 
     Notes:
-        - Although `status` is provided as `TaskStatusEnum`, the repository
-          stores the status as a plain string (`status.value`) to keep the JSON
-          representation simple and compatible with the Task schema used by
-          the repository validator.
+        - Although `status` is provided as `TaskStatusEnum`, the repository stores
+          the status as a plain string (`status.value`) to keep the JSON
+          representation simple and compatible with the Task schema.
         - This function writes the task immediately via `save_task` and does not
           return the created task.
 
