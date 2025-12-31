@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
-from schemas import Task, TypedDictType
+from schemas import Task, TypedDictType, TaskStatusEnum
 from typing import Final, Any, Literal, get_origin, get_args, cast
+from datetime import datetime, timezone
 
-__all__ = ("load_tasks", "save_task")
+__all__ = ("load_tasks", "save_task", "create_task")
 
 REPO_DIR_NAME: Final[str] = "data"
 REPO_DIR_PATH: Final[Path] = Path(__file__).resolve().parents[1] / REPO_DIR_NAME
@@ -228,3 +229,46 @@ def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
     data.append(task)
     with repo_path.open("w", encoding="utf-8") as repo_file:
         json.dump(data, repo_file, ensure_ascii=False, indent=1)
+
+
+def create_task(description: str, status: TaskStatusEnum = TaskStatusEnum.TODO) -> None:
+    """
+    Create a new task and persist it in the JSON repository.
+
+    A task is assigned a monotonically increasing integer `id` based on the
+    current maximum id in the repository (`max_id + 1`). Timestamps are set
+    in UTC using ISO 8601 format.
+
+    Notes:
+        - Although `status` is provided as `TaskStatusEnum`, the repository
+          stores the status as a plain string (`status.value`) to keep the JSON
+          representation simple and compatible with the Task schema used by
+          the repository validator.
+        - This function writes the task immediately via `save_task` and does not
+          return the created task.
+
+    Args:
+        description: Human-readable task description.
+        status: Initial task status as an enum value. Defaults to `TODO`.
+
+    Raises:
+        ValueError: If the repository file is corrupted or contains invalid data,
+            or if the produced task does not match the Task schema.
+        OSError: If the repository file cannot be read or written due to
+            filesystem-related errors.
+        TypeError: If the resulting payload cannot be JSON-serialized.
+    """
+    data = load_tasks()
+
+    next_id = max((task["id"] for task in data), default=0) + 1
+    now = datetime.now(timezone.utc).isoformat()
+
+    task: Task = {
+        "id": next_id,
+        "description": description,
+        "status": status.value,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    save_task(task)
