@@ -4,7 +4,15 @@ from schemas import Task, TypedDictType, TaskStatusEnum, HasId
 from typing import Final, Any, Literal, get_origin, get_args, cast, TypeVar
 from datetime import datetime, timezone
 
-__all__ = ("load_tasks", "save_task", "create_task", "delete_task", "update_task")
+__all__ = (
+    "load_tasks",
+    "save_task",
+    "create_task",
+    "delete_task",
+    "update_task",
+    "mark_task_in_progress",
+    "mark_task_done",
+)
 
 REPO_DIR_NAME: Final[str] = "data"
 REPO_DIR_PATH: Final[Path] = Path(__file__).resolve().parents[1] / REPO_DIR_NAME
@@ -421,15 +429,56 @@ def update_task(
     _write_all(data, repo_path=repo_path)
 
 
-def mark_task_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+def _set_task_status(
+    task_id: int, task_status: TaskStatusEnum, *, repo_path: Path
+) -> None:
+    """
+    Set a task status by id and persist the change.
+
+    The task is located by its integer `id`. If found, its `status` is updated
+    to `task_status.value` and `updated_at` is set to the current UTC time
+    (ISO 8601). The repository file is then rewritten.
+
+    Args:
+        task_id: Task id to update.
+        task_status: New task status (enum value).
+        repo_path: Path to the repository JSON file.
+
+    Raises:
+        ValueError: If no task with the given id exists, or if the repository
+            file is corrupted/invalid.
+        OSError: If the file cannot be read or written due to filesystem errors.
+        TypeError: If the resulting payload cannot be JSON-serialized.
+    """
     data = load_tasks(repo_path=repo_path)
 
     idx = _find_item_idx(data, task_id)
     if idx is None:
         raise ValueError(TASK_NOT_FOUND_ERROR.format(task_id=task_id))
 
-    data[idx]["status"] = TaskStatusEnum.IN_PROGRESS.value
+    data[idx]["status"] = task_status.value
     data[idx]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     _write_all(data, repo_path=repo_path)
 
+
+def mark_task_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    """
+    Mark a task as in progress.
+
+    Args:
+        task_id: Task id to update.
+        repo_path: Path to the repository JSON file.
+    """
+    _set_task_status(task_id, TaskStatusEnum.IN_PROGRESS, repo_path=repo_path)
+
+
+def mark_task_done(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    """
+    Mark a task as done.
+
+    Args:
+        task_id: Task id to update.
+        repo_path: Path to the repository JSON file.
+    """
+    _set_task_status(task_id, TaskStatusEnum.DONE, repo_path=repo_path)
