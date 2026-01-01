@@ -12,6 +12,7 @@ __all__ = (
     "update_task",
     "mark_task_in_progress",
     "mark_task_done",
+    "REPO_FILE_PATH",
 )
 
 REPO_DIR_NAME: Final[str] = "data"
@@ -308,7 +309,6 @@ def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
     Notes:
         - `task` is validated against the Task schema before writing.
         - Existing repository contents are loaded and validated as well.
-        - Parent directories are created automatically.
 
     Args:
         task: Task object to append to the repository (must be JSON-serializable).
