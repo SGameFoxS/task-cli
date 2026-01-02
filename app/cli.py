@@ -1,9 +1,11 @@
+import sys
 from tabulate import tabulate
-from app.repo import load_tasks, REPO_FILE_PATH
+from app.repo import REPO_FILE_PATH, load_tasks, create_task, update_task, delete_task
 from datetime import datetime
 from app.schemas import Task, TaskRow, TaskStatusEnum
 from enum import Enum, unique
 from pathlib import Path
+from typing import TextIO
 
 
 @unique
@@ -34,18 +36,24 @@ def _task_to_row(task: Task) -> TaskRow:
 def _load_tasks_safe(*, repo_path: Path) -> tuple[list[Task] | None, str | None]:
     try:
         return load_tasks(repo_path=repo_path), None
-    except (ValueError, OSError) as e:
+    except (ValueError, OSError, TypeError) as e:
         return None, str(e)
 
 
-def _print_msg(msg: str, kind: MessageKind = MessageKind.INFO) -> None:
-    print(f"\n{kind.label} : {msg}\n")
+def _print_msg(
+    msg: str, kind: MessageKind = MessageKind.INFO, *, file: TextIO = sys.stdout
+) -> None:
+    print(f"\n{kind.label} : {msg}\n", file=file)
+
+
+def _print_err(msg: str) -> None:
+    _print_msg(msg, MessageKind.ERROR, file=sys.stderr)
 
 
 def _get_tasks(*, repo_path: Path) -> list[Task] | None:
     tasks, err = _load_tasks_safe(repo_path=repo_path)
     if err is not None:
-        _print_msg(err, kind=MessageKind.ERROR)
+        _print_err(err)
         return
 
     return tasks
@@ -53,7 +61,7 @@ def _get_tasks(*, repo_path: Path) -> list[Task] | None:
 
 def _print_tasks(tasks: list[Task]) -> None:
     rows = (_task_to_row(t) for t in tasks)
-    print(tabulate(rows, "keys", tablefmt="simple_grid"))
+    print(tabulate(rows, "keys", tablefmt="simple_grid", disable_numparse=True))
 
 
 def _filter_tasks_by_status(tasks: list[Task], status: TaskStatusEnum) -> list[Task]:
@@ -112,3 +120,30 @@ def show_done(*, repo_path: Path = REPO_FILE_PATH) -> None:
         return
 
     _print_tasks(tasks)
+
+
+def add_task(description: str, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    try:
+        id = create_task(description, repo_path=repo_path)
+        _print_msg(f"Task added successfully (ID: {id})")
+    except (ValueError, OSError, TypeError) as e:
+        _print_err(str(e))
+
+
+def edit_task(
+    task_id: int, description: str, *, repo_path: Path = REPO_FILE_PATH
+) -> None:
+    try:
+        updated = update_task(task_id, description, repo_path=repo_path)
+        _print_msg(f"Task {task_id} updated")
+        _print_tasks([updated])
+    except (ValueError, OSError, TypeError) as e:
+        _print_err(str(e))
+
+
+def remove_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    try:
+        delete_task(task_id, repo_path=repo_path)
+        _print_msg(f"Task {task_id} deleted")
+    except (ValueError, OSError, TypeError) as e:
+        _print_err(str(e))

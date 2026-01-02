@@ -358,7 +358,7 @@ def create_task(
     status: TaskStatusEnum = TaskStatusEnum.TODO,
     *,
     repo_path: Path = REPO_FILE_PATH,
-) -> None:
+) -> int:
     """
     Create a new task and persist it in the JSON repository.
 
@@ -377,6 +377,9 @@ def create_task(
         description: Human-readable task description.
         status: Initial task status as an enum value. Defaults to `TODO`.
         repo_path: Path to the repository JSON file.
+
+    Returns:
+        The integer id of the created task.
 
     Raises:
         ValueError: If the repository file is corrupted or contains invalid data,
@@ -399,6 +402,8 @@ def create_task(
     }
 
     save_task(task, repo_path=repo_path)
+
+    return next_id
 
 
 def delete_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
@@ -428,7 +433,7 @@ def delete_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
 
 def update_task(
     task_id: int, description: str, *, repo_path: Path = REPO_FILE_PATH
-) -> None:
+) -> Task:
     """
     Update an existing task by id.
 
@@ -440,6 +445,9 @@ def update_task(
         task_id: Task id to update.
         description: New task description.
         repo_path: Path to the repository JSON file.
+
+    Returns:
+        The updated task object.
 
     Raises:
         ValueError: If no task with the given id exists, or if the repository
@@ -457,6 +465,8 @@ def update_task(
     data[idx]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     _write_all(data, repo_path=repo_path)
+
+    return data[idx]
 
 
 def _set_task_status(
