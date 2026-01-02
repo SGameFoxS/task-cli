@@ -1,3 +1,4 @@
+import errno
 from tabulate import tabulate
 from app.repo import load_tasks, REPO_FILE_PATH
 from datetime import datetime
@@ -16,11 +17,9 @@ class MessageKind(Enum):
         return self.value.upper()
 
 
-def _format_dt(isodt: str) -> str:
-    dt = datetime.fromisoformat(isodt)
-    dt = dt.astimezone()
-
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+def _format_dt(isodt: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    dt = datetime.fromisoformat(isodt).astimezone()
+    return dt.strftime(fmt)
 
 
 def _task_to_row(task: Task) -> TaskRow:
@@ -33,20 +32,88 @@ def _task_to_row(task: Task) -> TaskRow:
     }
 
 
-def show_info(msg: str, kind: MessageKind = MessageKind.INFO) -> None:
-    print(tabulate([[kind.label, msg]], tablefmt="simple_grid", disable_numparse=True))
+def _load_tasks_safe(*, repo_path: Path) -> tuple[list[Task] | None, str | None]:
+    try:
+        return load_tasks(repo_path=repo_path), None
+    except ValueError as e:
+        return None, str(e)
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.EACCES:
+            return None, f"Permission denied: {repo_path}"
+        return None, f"Cannot read repository file {repo_path}: {e}"
 
 
-def show_all_tasks(*, repo_path: Path = REPO_FILE_PATH) -> None:
-    tasks = load_tasks(repo_path=repo_path)
+def _print_msg(msg: str, kind: MessageKind = MessageKind.INFO) -> None:
+    print(f"\n{kind.label} : {msg}\n")
 
-    if not tasks:
-        show_info("No tasks have been created yet")
+
+def _get_tasks(*, repo_path: Path) -> list[Task] | None:
+    tasks, err = _load_tasks_safe(repo_path=repo_path)
+    if err is not None:
+        _print_msg(err, kind=MessageKind.ERROR)
         return
 
+    return tasks
+
+
+def _print_tasks(tasks: list[Task]) -> None:
     rows = (_task_to_row(t) for t in tasks)
     print(tabulate(rows, "keys", tablefmt="simple_grid"))
 
 
-if __name__ == "__main__":
-    show_all_tasks()
+def _filter_tasks_by_status(tasks: list[Task], status: TaskStatusEnum) -> list[Task]:
+    return [t for t in tasks if t["status"] == status.value]
+
+
+def _get_tasks_by_status(
+    status: TaskStatusEnum, *, repo_path: Path
+) -> list[Task] | None:
+    tasks = _get_tasks(repo_path=repo_path)
+    if tasks is None:
+        return
+
+    return _filter_tasks_by_status(tasks, status)
+
+
+def show_all(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = _get_tasks(repo_path=repo_path)
+    if tasks is None:
+        return
+    if not tasks:
+        _print_msg("No tasks have been created yet")
+        return
+
+    _print_tasks(tasks)
+
+
+def show_todo(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = _get_tasks_by_status(TaskStatusEnum.TODO, repo_path=repo_path)
+    if tasks is None:
+        return
+    if not tasks:
+        _print_msg("No TODO tasks found")
+        return
+
+    _print_tasks(tasks)
+
+
+def show_in_progress(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = _get_tasks_by_status(TaskStatusEnum.IN_PROGRESS, repo_path=repo_path)
+    if tasks is None:
+        return
+    if not tasks:
+        _print_msg("No IN PROGRESS tasks found")
+        return
+
+    _print_tasks(tasks)
+
+
+def show_done(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = _get_tasks_by_status(TaskStatusEnum.DONE, repo_path=repo_path)
+    if tasks is None:
+        return
+    if not tasks:
+        _print_msg("No DONE tasks found")
+        return
+
+    _print_tasks(tasks)
