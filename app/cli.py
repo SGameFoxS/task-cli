@@ -16,10 +16,22 @@ from pathlib import Path
 from enums import TaskStatusEnum, MessageKind
 from typing import TextIO, Callable, TypeVar, ParamSpec
 
-T = TypeVar("T")
-P = ParamSpec("P")
+__all__ = (
+    "show_all",
+    "show_todo",
+    "show_in_progress",
+    "show_done",
+    "add_task",
+    "edit_task",
+    "remove_task",
+    "mark_in_progress",
+    "mark_done",
+)
 
-type LoadTasksResult = LoadTasksOk | LoadTasksErr
+_T = TypeVar("_T")
+_P = ParamSpec("_P")
+
+type _LoadTasksResult = LoadTasksOk | LoadTasksErr
 
 
 def _format_dt(isodt: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
@@ -37,7 +49,7 @@ def _task_to_row(task: Task) -> TaskRow:
     }
 
 
-def _load_tasks_safe(*, repo_path: Path) -> LoadTasksResult:
+def _load_tasks_safe(*, repo_path: Path) -> _LoadTasksResult:
     try:
         return LoadTasksOk(success=True, value=load_tasks(repo_path=repo_path))
     except (ValueError, OSError, TypeError) as e:
@@ -82,12 +94,12 @@ def _get_tasks_by_status(
     return _filter_tasks_by_status(tasks, status)
 
 
-def safe_action(
+def _safe_action(
     *, handled: tuple[type[Exception], ...] = (ValueError, OSError, TypeError)
-) -> Callable[[Callable[P, T]], Callable[P, T | None]]:
-    def deco(fn: Callable[P, T]) -> Callable[P, T | None]:
+) -> Callable[[Callable[_P, _T]], Callable[_P, _T | None]]:
+    def deco(fn: Callable[_P, _T]) -> Callable[_P, _T | None]:
         @functools.wraps(fn)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T | None:
+        def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T | None:
             try:
                 return fn(*args, **kwargs)
             except handled as e:
@@ -142,13 +154,13 @@ def show_done(*, repo_path: Path = REPO_FILE_PATH) -> None:
     _print_tasks(tasks)
 
 
-@safe_action()
+@_safe_action()
 def add_task(description: str, *, repo_path: Path = REPO_FILE_PATH) -> None:
     id = create_task(description, repo_path=repo_path)
     _print_msg(f"Task added successfully (ID: {id})")
 
 
-@safe_action()
+@_safe_action()
 def edit_task(
     task_id: int, description: str, *, repo_path: Path = REPO_FILE_PATH
 ) -> None:
@@ -157,20 +169,20 @@ def edit_task(
     _print_tasks([updated])
 
 
-@safe_action()
+@_safe_action()
 def remove_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     delete_task(task_id, repo_path=repo_path)
     _print_msg(f"Task {task_id} deleted")
 
 
-@safe_action()
+@_safe_action()
 def mark_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     marked = mark_task_in_progress(task_id, repo_path=repo_path)
     _print_msg(f"Task {task_id} marked as IN PROGRESS")
     _print_tasks([marked])
 
 
-@safe_action()
+@_safe_action()
 def mark_done(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     marked = mark_task_done(task_id, repo_path=repo_path)
     _print_msg(f"Task {task_id} marked as DONE")
