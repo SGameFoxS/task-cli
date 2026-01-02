@@ -17,11 +17,9 @@ class MessageKind(Enum):
         return self.value.upper()
 
 
-def _format_dt(isodt: str) -> str:
-    dt = datetime.fromisoformat(isodt)
-    dt = dt.astimezone()
-
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+def _format_dt(isodt: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    dt = datetime.fromisoformat(isodt).astimezone()
+    return dt.strftime(fmt)
 
 
 def _task_to_row(task: Task) -> TaskRow:
