@@ -13,19 +13,20 @@ from app.repo import (
 from datetime import datetime
 from app.schemas import Task, TaskRow, LoadTasksOk, LoadTasksErr
 from pathlib import Path
-from enums import TaskStatusEnum, MessageKind
+from app.enums import TaskStatusEnum, MessageKind
 from typing import TextIO, Callable, TypeVar, ParamSpec
 
 __all__ = (
-    "show_all",
-    "show_todo",
-    "show_in_progress",
-    "show_done",
-    "add_task",
-    "edit_task",
-    "remove_task",
-    "mark_in_progress",
-    "mark_done",
+    "repo_path_cmd",
+    "show_all_cmd",
+    "show_todo_cmd",
+    "show_in_progress_cmd",
+    "show_done_cmd",
+    "add_task_cmd",
+    "update_task_cmd",
+    "delete_task_cmd",
+    "mark_in_progress_cmd",
+    "mark_done_cmd",
 )
 
 _T = TypeVar("_T")
@@ -110,7 +111,11 @@ def _safe_action(
     return deco
 
 
-def show_all(*, repo_path: Path = REPO_FILE_PATH) -> None:
+def repo_path_cmd(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    _print_msg(str(repo_path))
+
+
+def show_all_cmd(*, repo_path: Path = REPO_FILE_PATH) -> None:
     tasks = _get_tasks(repo_path=repo_path)
     if tasks is None:
         return
@@ -121,7 +126,7 @@ def show_all(*, repo_path: Path = REPO_FILE_PATH) -> None:
     _print_tasks(tasks)
 
 
-def show_todo(*, repo_path: Path = REPO_FILE_PATH) -> None:
+def show_todo_cmd(*, repo_path: Path = REPO_FILE_PATH) -> None:
     tasks = _get_tasks_by_status(TaskStatusEnum.TODO, repo_path=repo_path)
     if tasks is None:
         return
@@ -132,7 +137,7 @@ def show_todo(*, repo_path: Path = REPO_FILE_PATH) -> None:
     _print_tasks(tasks)
 
 
-def show_in_progress(*, repo_path: Path = REPO_FILE_PATH) -> None:
+def show_in_progress_cmd(*, repo_path: Path = REPO_FILE_PATH) -> None:
     tasks = _get_tasks_by_status(TaskStatusEnum.IN_PROGRESS, repo_path=repo_path)
     if tasks is None:
         return
@@ -143,7 +148,7 @@ def show_in_progress(*, repo_path: Path = REPO_FILE_PATH) -> None:
     _print_tasks(tasks)
 
 
-def show_done(*, repo_path: Path = REPO_FILE_PATH) -> None:
+def show_done_cmd(*, repo_path: Path = REPO_FILE_PATH) -> None:
     tasks = _get_tasks_by_status(TaskStatusEnum.DONE, repo_path=repo_path)
     if tasks is None:
         return
@@ -155,13 +160,13 @@ def show_done(*, repo_path: Path = REPO_FILE_PATH) -> None:
 
 
 @_safe_action()
-def add_task(description: str, *, repo_path: Path = REPO_FILE_PATH) -> None:
+def add_task_cmd(description: str, *, repo_path: Path = REPO_FILE_PATH) -> None:
     id = create_task(description, repo_path=repo_path)
     _print_msg(f"Task added successfully (ID: {id})")
 
 
 @_safe_action()
-def edit_task(
+def update_task_cmd(
     task_id: int, description: str, *, repo_path: Path = REPO_FILE_PATH
 ) -> None:
     updated = update_task(task_id, description, repo_path=repo_path)
@@ -170,20 +175,20 @@ def edit_task(
 
 
 @_safe_action()
-def remove_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+def delete_task_cmd(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     delete_task(task_id, repo_path=repo_path)
     _print_msg(f"Task {task_id} deleted")
 
 
 @_safe_action()
-def mark_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+def mark_in_progress_cmd(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     marked = mark_task_in_progress(task_id, repo_path=repo_path)
     _print_msg(f"Task {task_id} marked as IN PROGRESS")
     _print_tasks([marked])
 
 
 @_safe_action()
-def mark_done(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+def mark_done_cmd(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     marked = mark_task_done(task_id, repo_path=repo_path)
     _print_msg(f"Task {task_id} marked as DONE")
     _print_tasks([marked])

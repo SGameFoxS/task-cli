@@ -1,10 +1,10 @@
-from enum import Enum, unique
+from enum import Enum, StrEnum, unique
 
 __all__ = ("TaskStatusEnum", "MessageKind")
 
 
 @unique
-class TaskStatusEnum(Enum):
+class TaskStatusEnum(StrEnum):
     TODO = "todo"
     IN_PROGRESS = "in_progress"
     DONE = "done"

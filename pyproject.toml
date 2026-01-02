@@ -13,4 +13,4 @@ dependencies = [
 package = true
 
 [project.scripts]
-task-cli = "app.cli:cli"
+task-cli = "app.main:cli"
