@@ -1,6 +1,14 @@
 import sys
 from tabulate import tabulate
-from app.repo import REPO_FILE_PATH, load_tasks, create_task, update_task, delete_task
+from app.repo import (
+    REPO_FILE_PATH,
+    load_tasks,
+    create_task,
+    update_task,
+    delete_task,
+    mark_task_in_progress,
+    mark_task_done,
+)
 from datetime import datetime
 from app.schemas import Task, TaskRow, TaskStatusEnum
 from enum import Enum, unique
@@ -145,5 +153,23 @@ def remove_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
     try:
         delete_task(task_id, repo_path=repo_path)
         _print_msg(f"Task {task_id} deleted")
+    except (ValueError, OSError, TypeError) as e:
+        _print_err(str(e))
+
+
+def mark_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    try:
+        marked = mark_task_in_progress(task_id, repo_path=repo_path)
+        _print_msg(f"Task {task_id} marked as IN PROGRESS")
+        _print_tasks([marked])
+    except (ValueError, OSError, TypeError) as e:
+        _print_err(str(e))
+
+
+def mark_done(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+    try:
+        marked = mark_task_done(task_id, repo_path=repo_path)
+        _print_msg(f"Task {task_id} marked as DONE")
+        _print_tasks([marked])
     except (ValueError, OSError, TypeError) as e:
         _print_err(str(e))
