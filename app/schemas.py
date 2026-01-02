@@ -1,18 +1,14 @@
-from enum import Enum, unique
-from typing import TypedDict, Literal, Protocol, Any
+from typing import TypedDict, Literal, Protocol, Any, NamedTuple
 
-__all__ = ("Task", "TaskStatus", "TypedDictType", "TaskStatusEnum", "TaskRow", "HasId")
-
-
-@unique
-class TaskStatusEnum(Enum):
-    TODO = "todo"
-    IN_PROGRESS = "in_progress"
-    DONE = "done"
-
-    @property
-    def label(self) -> str:
-        return self.value.replace("_", " ").upper()
+__all__ = (
+    "Task",
+    "TaskStatus",
+    "TypedDictType",
+    "TaskRow",
+    "HasId",
+    "LoadTasksOk",
+    "LoadTasksErr",
+)
 
 
 TaskStatus = Literal["todo", "in_progress", "done"]
@@ -32,6 +28,16 @@ class TaskRow(TypedDict):
     status: str
     created_at: str
     updated_at: str
+
+
+class LoadTasksOk(NamedTuple):
+    success: Literal[True]
+    value: list[Task]
+
+
+class LoadTasksErr(NamedTuple):
+    success: Literal[False]
+    msg: str
 
 
 class HasId(TypedDict):
