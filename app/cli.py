@@ -33,20 +33,54 @@ def _task_to_row(task: Task) -> TaskRow:
     }
 
 
-def show_info(msg: str, kind: MessageKind = MessageKind.INFO) -> None:
+def _show_info(msg: str, kind: MessageKind = MessageKind.INFO) -> None:
     print(tabulate([[kind.label, msg]], tablefmt="simple_grid", disable_numparse=True))
 
 
-def show_all_tasks(*, repo_path: Path = REPO_FILE_PATH) -> None:
-    tasks = load_tasks(repo_path=repo_path)
-
-    if not tasks:
-        show_info("No tasks have been created yet")
-        return
-
+def _show_tasks(tasks: list[Task]) -> None:
     rows = (_task_to_row(t) for t in tasks)
     print(tabulate(rows, "keys", tablefmt="simple_grid"))
 
 
-if __name__ == "__main__":
-    show_all_tasks()
+def _filter_tasks_by_status(tasks: list[Task], status: TaskStatusEnum) -> list[Task]:
+    return [t for t in tasks if t["status"] == status.value]
+
+
+def _get_tasks_by_status(status: TaskStatusEnum, *, repo_path) -> list[Task]:
+    return _filter_tasks_by_status(load_tasks(repo_path=repo_path), status)
+
+
+def show_all_tasks(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = load_tasks(repo_path=repo_path)
+    if not tasks:
+        _show_info("No tasks have been created yet")
+        return
+
+    _show_tasks(tasks)
+
+
+def show_todo_tasks(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = _get_tasks_by_status(TaskStatusEnum.TODO, repo_path=repo_path)
+    if not tasks:
+        _show_info("No TODO tasks found")
+        return
+
+    _show_tasks(tasks)
+
+
+def show_in_progress_tasks(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = _get_tasks_by_status(TaskStatusEnum.IN_PROGRESS, repo_path=repo_path)
+    if not tasks:
+        _show_info("No IN PROGRESS tasks found")
+        return
+
+    _show_tasks(tasks)
+
+
+def show_done_tasks(*, repo_path: Path = REPO_FILE_PATH) -> None:
+    tasks = _get_tasks_by_status(TaskStatusEnum.DONE, repo_path=repo_path)
+    if not tasks:
+        _show_info("No DONE tasks found")
+        return
+
+    _show_tasks(tasks)
