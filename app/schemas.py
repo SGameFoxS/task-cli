@@ -1,4 +1,4 @@
-from typing import TypedDict, Literal, Protocol, Any, NamedTuple
+from typing import TypedDict, Literal, Protocol, Any, NamedTuple, Final
 
 __all__ = (
     "Task",
@@ -10,8 +10,20 @@ __all__ = (
     "LoadTasksErr",
 )
 
+# Sentinel: used in runtime schema validation to mean "ISO 8601 datetime string"
+ISO_DATETIME = object()
 
-TaskStatus = Literal["todo", "in_progress", "done"]
+type TaskStatus = Literal["todo", "in_progress", "done"]
+
+TASK_STATUS: Final[tuple[str, ...]] = "todo", "in_progress", "done"
+
+TASK_REPO_SCHEMA: Final[dict[str, object]] = {
+    "id": int,
+    "description": str,
+    "status": TASK_STATUS,
+    "created_at": ISO_DATETIME,
+    "updated_at": ISO_DATETIME,
+}
 
 
 class Task(TypedDict):

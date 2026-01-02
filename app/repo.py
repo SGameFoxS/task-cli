@@ -1,7 +1,7 @@
 import json
 import errno
 from pathlib import Path
-from schemas import Task, TypedDictType, HasId
+from schemas import Task, TypedDictType, HasId, ISO_DATETIME, TASK_REPO_SCHEMA
 from enums import TaskStatusEnum
 from typing import Final, Any, Literal, get_origin, get_args, cast, TypeVar
 from datetime import datetime, timezone
@@ -49,6 +49,14 @@ T = TypeVar("T", bound=TypedDictType)
 U = TypeVar("U", bound=HasId)
 
 
+def _is_iso_datetime(isodt: str) -> bool:
+    try:
+        datetime.fromisoformat(isodt)
+        return True
+    except ValueError:
+        return False
+
+
 def _check_value_type(value: Any, expected_type: Any) -> bool:
     """
     Return True if `value` matches `expected_type`.
@@ -65,6 +73,14 @@ def _check_value_type(value: Any, expected_type: Any) -> bool:
 
     if origin is Literal:
         return value in get_args(expected_type)
+
+    #
+    if isinstance(expected_type, tuple):
+        return value in expected_type
+
+    if expected_type is ISO_DATETIME:
+        return isinstance(value, str) and _is_iso_datetime(value)
+    #
 
     if isinstance(expected_type, type):
         return isinstance(value, expected_type)
@@ -85,11 +101,65 @@ def _type_repr(expected_type: Any) -> str:
     if origin is Literal:
         allowed = " or ".join(repr(arg) for arg in get_args(expected_type))
         return allowed
+    #
+    if isinstance(expected_type, tuple):
+        allowed = " or ".join(repr(x) for x in expected_type)
+        return allowed
 
+    if expected_type is ISO_DATETIME:
+        return "ISO 8601 datetime string"
+    #
     if isinstance(expected_type, type):
         return expected_type.__name__
 
     return str(expected_type)
+
+
+def _assert_dict_by_dict_schema(obj: object, schema: dict[str, object]) -> None:
+    if not isinstance(obj, dict):
+        raise ValueError(VALIDATION_EXPECTED_DICT_ERROR.format(got=type(obj).__name__))
+
+    # required keys
+    missing = [k for k in schema if k not in obj]
+    if missing:
+        raise ValueError(VALIDATION_MISSING_KEYS_ERROR.format(keys=missing))
+
+    # extra keys
+    extra = [k for k in obj if k not in schema]
+    if extra:
+        raise ValueError(VALIDATION_UNEXPECTED_KEYS_ERROR.format(keys=extra))
+
+    # type check
+    for key, expected_type in schema.items():
+        if key not in obj:
+            continue
+
+        value = obj[key]
+        if not _check_value_type(value, expected_type):
+            raise ValueError(
+                VALIDATION_INVALID_TYPE_ERROR.format(
+                    key=key,
+                    expected=_type_repr(expected_type),
+                    got=value,
+                )
+            )
+
+
+def _assert_list_valid_by_dict_schema(
+    data: object, *, schema: dict[str, object], repo_path: Path
+) -> None:
+    if not isinstance(data, list):
+        raise ValueError(REPO_FORMAT_INVALID_ERROR)
+
+    for i, item in enumerate(data):
+        try:
+            _assert_dict_by_dict_schema(item, schema)
+        except ValueError as e:
+            raise ValueError(
+                ITEM_INVALID_AT_INDEX_ERROR.format(
+                    repo_path=repo_path, index=i, detail=e
+                )
+            ) from e
 
 
 def _assert_typed_dict(obj: object, schema: type[T]) -> None:
@@ -127,9 +197,7 @@ def _assert_typed_dict(obj: object, schema: type[T]) -> None:
         if not _check_value_type(value, expected_type):
             raise ValueError(
                 VALIDATION_INVALID_TYPE_ERROR.format(
-                    key=key,
-                    expected=_type_repr(expected_type),
-                    got=value,
+                    key=key, expected=_type_repr(expected_type), got=value
                 )
             )
 
@@ -163,9 +231,7 @@ def _assert_list_valid(data: object, *, schema: type[T], repo_path: Path) -> Non
         except ValueError as e:
             raise ValueError(
                 ITEM_INVALID_AT_INDEX_ERROR.format(
-                    repo_path=repo_path,
-                    index=i,
-                    detail=e,
+                    repo_path=repo_path, index=i, detail=e
                 )
             ) from e
 
@@ -191,6 +257,13 @@ def _as_list(data: object, *, schema: type[T], repo_path: Path) -> list[T]:
     """
     _assert_list_valid(data, schema=schema, repo_path=repo_path)
     return cast(list[T], data)
+
+
+def _as_task_list(
+    data: object, *, schema: dict[str, object], repo_path: Path
+) -> list[Task]:
+    _assert_list_valid_by_dict_schema(data, schema=schema, repo_path=repo_path)
+    return cast(list[Task], data)
 
 
 def _load(*, schema: type[T], repo_path: Path) -> list[T]:
@@ -232,6 +305,25 @@ def _load(*, schema: type[T], repo_path: Path) -> list[T]:
         raise OSError(REPO_READ_ERROR.format(repo_path=repo_path, detail=str(e))) from e
 
     return _as_list(data, schema=schema, repo_path=repo_path)
+
+
+def _load_t(*, schema: dict[str, object], repo_path: Path) -> list[Task]:
+    try:
+        with repo_path.open(encoding="utf-8") as repo_file:
+            data: object = json.load(repo_file)
+    except FileNotFoundError:
+        data = []
+    except json.JSONDecodeError as e:
+        raise ValueError(REPO_CORRUPTED_ERROR.format(repo_path=repo_path)) from e
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.EACCES:
+            raise OSError(
+                REPO_PERMISSION_DENIED_ERROR.format(repo_path=repo_path)
+            ) from e
+
+        raise OSError(REPO_READ_ERROR.format(repo_path=repo_path, detail=str(e))) from e
+
+    return _as_task_list(data, schema=schema, repo_path=repo_path)
 
 
 def _write_all(items: list[T], *, repo_path: Path, indent: int | None = 1) -> None:
@@ -303,6 +395,16 @@ def _save(item: T, *, schema: type[T], repo_path: Path) -> None:
     _write_all(data, repo_path=repo_path)
 
 
+def _save_t(task: Task, *, schema: dict[str, object], repo_path: Path) -> None:
+    _assert_dict_by_dict_schema(task, schema=schema)
+
+    data = _load_t(schema=schema, repo_path=repo_path)
+
+    data.append(task)
+
+    _write_all(data, repo_path=repo_path)
+
+
 def _find_item_idx(items: list[U], item_id: int) -> int | None:
     """Return the index of the first item whose 'id' equals `item_id`, or None if not found."""
     return next((i for i, t in enumerate(items) if t["id"] == item_id), None)
@@ -330,7 +432,8 @@ def load_tasks(*, repo_path: Path = REPO_FILE_PATH) -> list[Task]:
         ValueError: If the JSON is corrupted or the decoded payload is invalid.
         OSError: If the file cannot be read due to filesystem-related errors.
     """
-    return _load(schema=Task, repo_path=repo_path)
+    # return _load(schema=Task, repo_path=repo_path)
+    return _load_t(schema=TASK_REPO_SCHEMA, repo_path=repo_path)
 
 
 def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
@@ -351,7 +454,8 @@ def save_task(task: Task, *, repo_path: Path = REPO_FILE_PATH) -> None:
         OSError: If the file or directories cannot be created/read/written.
         TypeError: If the resulting payload cannot be JSON-serialized.
     """
-    _save(task, schema=Task, repo_path=repo_path)
+    # _save(task, schema=Task, repo_path=repo_path)
+    _save_t(task, schema=TASK_REPO_SCHEMA, repo_path=repo_path)
 
 
 def create_task(
