@@ -1,4 +1,5 @@
 import json
+import errno
 from pathlib import Path
 from schemas import Task, TypedDictType, TaskStatusEnum, HasId
 from typing import Final, Any, Literal, get_origin, get_args, cast, TypeVar
@@ -25,6 +26,10 @@ REPO_CORRUPTED_ERROR: Final[str] = "Corrupted repository file ({repo_path})"
 REPO_FORMAT_INVALID_ERROR: Final[str] = (
     "Repository format is invalid: expected a JSON array (list) of items"
 )
+REPO_PERMISSION_DENIED_ERROR: Final[str] = "Permission denied: {repo_path}"
+REPO_READ_ERROR: Final[str] = "Cannot read repository file {repo_path}: {detail}"
+REPO_WRITE_ERROR: Final[str] = "Cannot write repository file {repo_path}: {detail}"
+REPO_MKDIR_ERROR: Final[str] = "Cannot create repository directory {repo_dir}: {detail}"
 
 VALIDATION_EXPECTED_DICT_ERROR: Final[str] = "Expected JSON object (dict), got {got}"
 VALIDATION_MISSING_KEYS_ERROR: Final[str] = "Missing keys: {keys}"
@@ -217,6 +222,13 @@ def _load(*, schema: type[T], repo_path: Path) -> list[T]:
         data = []
     except json.JSONDecodeError as e:
         raise ValueError(REPO_CORRUPTED_ERROR.format(repo_path=repo_path)) from e
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.EACCES:
+            raise OSError(
+                REPO_PERMISSION_DENIED_ERROR.format(repo_path=repo_path)
+            ) from e
+
+        raise OSError(REPO_READ_ERROR.format(repo_path=repo_path, detail=str(e))) from e
 
     return _as_list(data, schema=schema, repo_path=repo_path)
 
@@ -238,10 +250,28 @@ def _write_all(items: list[T], *, repo_path: Path, indent: int | None = 1) -> No
         OSError: If the file cannot be created/opened/written.
         TypeError: If `items` cannot be JSON-serialized.
     """
-    repo_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        repo_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.EACCES:
+            raise OSError(
+                REPO_PERMISSION_DENIED_ERROR.format(repo_path=repo_path.parent)
+            ) from e
+        raise OSError(
+            REPO_MKDIR_ERROR.format(repo_dir=repo_path.parent, detail=str(e))
+        ) from e
 
-    with repo_path.open("w", encoding="utf-8") as repo_file:
-        json.dump(items, repo_file, ensure_ascii=False, indent=indent)
+    try:
+        with repo_path.open("w", encoding="utf-8") as repo_file:
+            json.dump(items, repo_file, ensure_ascii=False, indent=indent)
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.EACCES:
+            raise OSError(
+                REPO_PERMISSION_DENIED_ERROR.format(repo_path=repo_path)
+            ) from e
+        raise OSError(
+            REPO_WRITE_ERROR.format(repo_path=repo_path, detail=str(e))
+        ) from e
 
 
 def _save(item: T, *, schema: type[T], repo_path: Path) -> None:

@@ -1,4 +1,3 @@
-import errno
 from tabulate import tabulate
 from app.repo import load_tasks, REPO_FILE_PATH
 from datetime import datetime
@@ -35,12 +34,8 @@ def _task_to_row(task: Task) -> TaskRow:
 def _load_tasks_safe(*, repo_path: Path) -> tuple[list[Task] | None, str | None]:
     try:
         return load_tasks(repo_path=repo_path), None
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         return None, str(e)
-    except OSError as e:
-        if getattr(e, "errno", None) == errno.EACCES:
-            return None, f"Permission denied: {repo_path}"
-        return None, f"Cannot read repository file {repo_path}: {e}"
 
 
 def _print_msg(msg: str, kind: MessageKind = MessageKind.INFO) -> None:
