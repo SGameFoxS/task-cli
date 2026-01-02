@@ -1,4 +1,5 @@
 import sys
+import functools
 from tabulate import tabulate
 from app.repo import (
     REPO_FILE_PATH,
@@ -10,20 +11,15 @@ from app.repo import (
     mark_task_done,
 )
 from datetime import datetime
-from app.schemas import Task, TaskRow, TaskStatusEnum
-from enum import Enum, unique
+from app.schemas import Task, TaskRow, LoadTasksOk, LoadTasksErr
 from pathlib import Path
-from typing import TextIO
+from enums import TaskStatusEnum, MessageKind
+from typing import TextIO, Callable, TypeVar, ParamSpec
 
+T = TypeVar("T")
+P = ParamSpec("P")
 
-@unique
-class MessageKind(Enum):
-    INFO = "info"
-    ERROR = "error"
-
-    @property
-    def label(self) -> str:
-        return self.value.upper()
+type LoadTasksResult = LoadTasksOk | LoadTasksErr
 
 
 def _format_dt(isodt: str, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
@@ -41,11 +37,11 @@ def _task_to_row(task: Task) -> TaskRow:
     }
 
 
-def _load_tasks_safe(*, repo_path: Path) -> tuple[list[Task] | None, str | None]:
+def _load_tasks_safe(*, repo_path: Path) -> LoadTasksResult:
     try:
-        return load_tasks(repo_path=repo_path), None
+        return LoadTasksOk(success=True, value=load_tasks(repo_path=repo_path))
     except (ValueError, OSError, TypeError) as e:
-        return None, str(e)
+        return LoadTasksErr(success=False, msg=str(e))
 
 
 def _print_msg(
@@ -59,12 +55,12 @@ def _print_err(msg: str) -> None:
 
 
 def _get_tasks(*, repo_path: Path) -> list[Task] | None:
-    tasks, err = _load_tasks_safe(repo_path=repo_path)
-    if err is not None:
-        _print_err(err)
+    res = _load_tasks_safe(repo_path=repo_path)
+    if res.success is False:
+        _print_err(res.msg)
         return
 
-    return tasks
+    return res.value
 
 
 def _print_tasks(tasks: list[Task]) -> None:
@@ -84,6 +80,22 @@ def _get_tasks_by_status(
         return
 
     return _filter_tasks_by_status(tasks, status)
+
+
+def safe_action(
+    *, handled: tuple[type[Exception], ...] = (ValueError, OSError, TypeError)
+) -> Callable[[Callable[P, T]], Callable[P, T | None]]:
+    def deco(fn: Callable[P, T]) -> Callable[P, T | None]:
+        @functools.wraps(fn)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T | None:
+            try:
+                return fn(*args, **kwargs)
+            except handled as e:
+                _print_err(str(e))
+
+        return wrapper
+
+    return deco
 
 
 def show_all(*, repo_path: Path = REPO_FILE_PATH) -> None:
@@ -130,46 +142,36 @@ def show_done(*, repo_path: Path = REPO_FILE_PATH) -> None:
     _print_tasks(tasks)
 
 
+@safe_action()
 def add_task(description: str, *, repo_path: Path = REPO_FILE_PATH) -> None:
-    try:
-        id = create_task(description, repo_path=repo_path)
-        _print_msg(f"Task added successfully (ID: {id})")
-    except (ValueError, OSError, TypeError) as e:
-        _print_err(str(e))
+    id = create_task(description, repo_path=repo_path)
+    _print_msg(f"Task added successfully (ID: {id})")
 
 
+@safe_action()
 def edit_task(
     task_id: int, description: str, *, repo_path: Path = REPO_FILE_PATH
 ) -> None:
-    try:
-        updated = update_task(task_id, description, repo_path=repo_path)
-        _print_msg(f"Task {task_id} updated")
-        _print_tasks([updated])
-    except (ValueError, OSError, TypeError) as e:
-        _print_err(str(e))
+    updated = update_task(task_id, description, repo_path=repo_path)
+    _print_msg(f"Task {task_id} updated")
+    _print_tasks([updated])
 
 
+@safe_action()
 def remove_task(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
-    try:
-        delete_task(task_id, repo_path=repo_path)
-        _print_msg(f"Task {task_id} deleted")
-    except (ValueError, OSError, TypeError) as e:
-        _print_err(str(e))
+    delete_task(task_id, repo_path=repo_path)
+    _print_msg(f"Task {task_id} deleted")
 
 
+@safe_action()
 def mark_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
-    try:
-        marked = mark_task_in_progress(task_id, repo_path=repo_path)
-        _print_msg(f"Task {task_id} marked as IN PROGRESS")
-        _print_tasks([marked])
-    except (ValueError, OSError, TypeError) as e:
-        _print_err(str(e))
+    marked = mark_task_in_progress(task_id, repo_path=repo_path)
+    _print_msg(f"Task {task_id} marked as IN PROGRESS")
+    _print_tasks([marked])
 
 
+@safe_action()
 def mark_done(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
-    try:
-        marked = mark_task_done(task_id, repo_path=repo_path)
-        _print_msg(f"Task {task_id} marked as DONE")
-        _print_tasks([marked])
-    except (ValueError, OSError, TypeError) as e:
-        _print_err(str(e))
+    marked = mark_task_done(task_id, repo_path=repo_path)
+    _print_msg(f"Task {task_id} marked as DONE")
+    _print_tasks([marked])

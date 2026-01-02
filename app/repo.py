@@ -1,7 +1,8 @@
 import json
 import errno
 from pathlib import Path
-from schemas import Task, TypedDictType, TaskStatusEnum, HasId
+from schemas import Task, TypedDictType, HasId
+from enums import TaskStatusEnum
 from typing import Final, Any, Literal, get_origin, get_args, cast, TypeVar
 from datetime import datetime, timezone
 
