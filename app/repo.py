@@ -471,7 +471,7 @@ def update_task(
 
 def _set_task_status(
     task_id: int, task_status: TaskStatusEnum, *, repo_path: Path
-) -> None:
+) -> Task:
     """
     Set a task status by id and persist the change.
 
@@ -483,6 +483,9 @@ def _set_task_status(
         task_id: Task id to update.
         task_status: New task status (enum value).
         repo_path: Path to the repository JSON file.
+
+    Returns:
+        The updated task object.
 
     Raises:
         ValueError: If no task with the given id exists, or if the repository
@@ -501,24 +504,44 @@ def _set_task_status(
 
     _write_all(data, repo_path=repo_path)
 
+    return data[idx]
 
-def mark_task_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+
+def mark_task_in_progress(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> Task:
     """
     Mark a task as in progress.
 
     Args:
         task_id: Task id to update.
         repo_path: Path to the repository JSON file.
+
+    Returns:
+        The updated task object.
+
+    Raises:
+        ValueError: If no task with the given id exists, or if the repository
+            file is corrupted/invalid.
+        OSError: If the file cannot be read or written due to filesystem errors.
+        TypeError: If the resulting payload cannot be JSON-serialized.
     """
-    _set_task_status(task_id, TaskStatusEnum.IN_PROGRESS, repo_path=repo_path)
+    return _set_task_status(task_id, TaskStatusEnum.IN_PROGRESS, repo_path=repo_path)
 
 
-def mark_task_done(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> None:
+def mark_task_done(task_id: int, *, repo_path: Path = REPO_FILE_PATH) -> Task:
     """
     Mark a task as done.
 
     Args:
         task_id: Task id to update.
         repo_path: Path to the repository JSON file.
+
+    Returns:
+        The updated task object.
+
+    Raises:
+        ValueError: If no task with the given id exists, or if the repository
+            file is corrupted/invalid.
+        OSError: If the file cannot be read or written due to filesystem errors.
+        TypeError: If the resulting payload cannot be JSON-serialized.
     """
-    _set_task_status(task_id, TaskStatusEnum.DONE, repo_path=repo_path)
+    return _set_task_status(task_id, TaskStatusEnum.DONE, repo_path=repo_path)
