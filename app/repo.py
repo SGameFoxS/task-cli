@@ -1,8 +1,8 @@
 import json
 import errno
 from pathlib import Path
-from schemas import Task, TypedDictType, HasId, ISO_DATETIME, TASK_REPO_SCHEMA
-from enums import TaskStatusEnum
+from app.schemas import Task, TypedDictType, HasId, ISO_DATETIME, TASK_REPO_SCHEMA
+from app.enums import TaskStatusEnum
 from typing import Final, Any, Literal, get_origin, get_args, cast, TypeVar
 from datetime import datetime, timezone
 
@@ -45,8 +45,8 @@ ITEM_INVALID_AT_INDEX_ERROR: Final[str] = (
 
 TASK_NOT_FOUND_ERROR: Final[str] = "Task with id {task_id} not found"
 
-T = TypeVar("T", bound=TypedDictType)
-U = TypeVar("U", bound=HasId)
+_T = TypeVar("_T", bound=TypedDictType)
+_U = TypeVar("_U", bound=HasId)
 
 
 def _is_iso_datetime(isodt: str) -> bool:
@@ -162,7 +162,7 @@ def _assert_list_valid_by_dict_schema(
             ) from e
 
 
-def _assert_typed_dict(obj: object, schema: type[T]) -> None:
+def _assert_typed_dict(obj: object, schema: type[_T]) -> None:
     """
     Assert that `obj` conforms to the given TypedDict schema at runtime.
 
@@ -202,7 +202,7 @@ def _assert_typed_dict(obj: object, schema: type[T]) -> None:
             )
 
 
-def _assert_list_valid(data: object, *, schema: type[T], repo_path: Path) -> None:
+def _assert_list_valid(data: object, *, schema: type[_T], repo_path: Path) -> None:
     """
     Validate a decoded repository payload.
 
@@ -236,7 +236,7 @@ def _assert_list_valid(data: object, *, schema: type[T], repo_path: Path) -> Non
             ) from e
 
 
-def _as_list(data: object, *, schema: type[T], repo_path: Path) -> list[T]:
+def _as_list(data: object, *, schema: type[_T], repo_path: Path) -> list[_T]:
     """
     Validate and cast a decoded JSON value to `list[T]`.
 
@@ -256,7 +256,7 @@ def _as_list(data: object, *, schema: type[T], repo_path: Path) -> list[T]:
         ValueError: If the repository payload is invalid.
     """
     _assert_list_valid(data, schema=schema, repo_path=repo_path)
-    return cast(list[T], data)
+    return cast(list[_T], data)
 
 
 def _as_task_list(
@@ -266,7 +266,7 @@ def _as_task_list(
     return cast(list[Task], data)
 
 
-def _load(*, schema: type[T], repo_path: Path) -> list[T]:
+def _load(*, schema: type[_T], repo_path: Path) -> list[_T]:
     """
     Load and validate a list of items from a JSON repository file.
 
@@ -326,7 +326,7 @@ def _load_t(*, schema: dict[str, object], repo_path: Path) -> list[Task]:
     return _as_task_list(data, schema=schema, repo_path=repo_path)
 
 
-def _write_all(items: list[T], *, repo_path: Path, indent: int | None = 1) -> None:
+def _write_all(items: list[_T], *, repo_path: Path, indent: int | None = 1) -> None:
     """
     Write the full repository payload to disk.
 
@@ -367,7 +367,7 @@ def _write_all(items: list[T], *, repo_path: Path, indent: int | None = 1) -> No
         ) from e
 
 
-def _save(item: T, *, schema: type[T], repo_path: Path) -> None:
+def _save(item: _T, *, schema: type[_T], repo_path: Path) -> None:
     """
     Append an item to the JSON repository file.
 
@@ -405,8 +405,10 @@ def _save_t(task: Task, *, schema: dict[str, object], repo_path: Path) -> None:
     _write_all(data, repo_path=repo_path)
 
 
-def _find_item_idx(items: list[U], item_id: int) -> int | None:
-    """Return the index of the first item whose 'id' equals `item_id`, or None if not found."""
+def _find_item_idx(items: list[_U], item_id: int) -> int | None:
+    """
+    Return the index of the first item whose 'id' equals `item_id`, or None if not found.
+    """
     return next((i for i, t in enumerate(items) if t["id"] == item_id), None)
 
 
